@@ -1,0 +1,66 @@
+#Create Snapshot report from multiple vcenter in HTML
+#SNAPSHOT Details
+
+$file = "C:\Users\yadavv13\Desktop\script\vmlist.txt"
+$VIservers = Get-Content $file
+$timestamp = Get-Date -format "yyyyMMdd-HH.mm"
+$htmlfile = "C:\$timestamp-VM-SNAPSHOT-INFO.html"
+
+#header description 
+#-------------------------------------------------------------------------------------------------------- 
+ 
+$Header = @" 
+<style> 
+TABLE {border-width: 1px;border-style: solid;border-color: black;border-collapse: collapse;} 
+TH {border-width: 1px;padding: 3px;border-style: solid;border-color: black;background-color: #6495ED;} 
+TD {border-width: 1px;padding: 3px;border-style: solid;border-color: black;} 
+</style> 
+"@ 
+ 
+ 
+#-------------------------------------------------------------------------------------------------------- 
+ 
+#generate report 
+#--------------------------------------------------------------------------------------------------------- 
+If (-not (Get-PSSnapin VMware.VimAutomation.Core)) 
+{  Try { Add-PSSnapin VMware.VimAutomation.Core -ErrorAction Stop } 
+   Catch { Write-Host "Unable to load PowerCLI, is it installed?" -ForegroundColor Red; Break } 
+} 
+ 
+foreach($viserver in $VIServers) 
+{ 
+Connect-VIServer $VIServer | Out-Null 
+} 
+ 
+ 
+$Report = Get-VM | Get-Snapshot | Select VM,Name,Datacenter,Cluster,Description,@{Label="Size";Expression={"{0:N2} GB" -f ($_.SizeGB)}},Created,@{Label="Created by";Expression={''}}
+ 
+foreach($snap in $Report) 
+{ 
+$snap.'Created by'= Get-VIEvent -entity (get-vm $snap.vm) -type info -MaxSamples 100000 | Where { $_.FullFormattedMessage.contains("Create virtual machine snapshot")}| Select-Object -First 1 -ExpandProperty username 
+} 
+foreach($snap1 in $Report) 
+{ 
+$snap1.'Datacenter'= get-vm $snap1.vm | get-datacenter
+} 
+foreach($snap2 in $Report) 
+{ 
+$snap2.'Cluster'= get-vm $snap2.vm | get-Cluster
+}
+ 
+If (-not $Report) 
+{  $Report = New-Object PSObject -Property @{ 
+      VM = "No snapshots found on any VM's controlled by vCenter" 
+      Name = "" 
+	  DataCenter = ""
+	  Cluster = ""
+	  Description = "" 
+      Size = "" 
+      Created = "" 
+   } 
+} 
+ 
+$Report = $Report | Select VM,Name,DataCenter,Cluster,Description,Size,Created,"Created by" | ConvertTo-Html -Head $Header -PreContent "<p><h2>Snapshot Report - vCenter</h2></p><br>" #| Set-AlternatingRows -CSSEvenClass even -CSSOddClass odd 
+$Report | Out-File $htmlfile
+ 
+Disconnect-VIServer -Server * -Force -Confirm:$false 
